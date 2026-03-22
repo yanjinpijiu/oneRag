@@ -33,7 +33,12 @@ spring:
       password: 1234
 
 milvus:
-  uri: http://192.168.100.128:19530
+  host: 192.168.100.128
+  port: 19530
+  username:
+  password:
+  collection:
+    name: documents
 
 rag:
   default:
@@ -137,6 +142,19 @@ ai:
         model: qwen3:8b-fp16
         priority: 2
 
+#  embedding:
+#    default-model: qwen-emb-8b
+#    candidates:
+#      - id: qwen-emb-8b
+#        provider: siliconflow
+#        model: qwen3embedding-8b
+#        dimension: 4096
+#        priority: 1
+#      - id: qwen-emb-local
+#        provider: ollama
+#        model: qwen3-embedding:8b-fp16
+#        dimension: 4096
+#        priority: 2
   embedding:
     default-model: qwen-emb-8b
     candidates:
@@ -145,11 +163,11 @@ ai:
         model: Qwen/Qwen3-Embedding-8B
         dimension: 4096
         priority: 1
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
-        dimension: 4096
-        priority: 2
+#      - id: qwen-emb-local
+#        provider: ollama
+#        model: qwen3-embedding:8b-fp16
+#        dimension: 4096
+#        priority: 2
 
   rerank:
     default-model: qwen3-rerank
@@ -167,6 +185,7 @@ rustfs:
   url: http://192.168.100.128:9000
   access-key-id: rustfsadmin
   secret-access-key: rustfsadmin
+  bucket: documents
 
 sa-token:
   token-name: Authorization

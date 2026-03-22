@@ -1,5 +1,6 @@
-package com.onerag.document.service;
+package com.onerag.document.config;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -30,5 +31,5 @@ public class RustFsProperties {
     /**
      * 默认存储桶名称
      */
-    private String defaultBucket = "documents";
+    private String bucket ;
 }

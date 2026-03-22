@@ -1,8 +1,6 @@
 package com.onerag.document.service;
 
 import com.onerag.document.dto.ParseResult;
-import com.onerag.document.dto.TextChunk;
-import com.onerag.document.config.ChunkingConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
@@ -12,7 +10,6 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.xml.sax.SAXException;
@@ -20,19 +17,12 @@ import org.xml.sax.SAXException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
 public class TikaParseService {
-    
-    @Autowired
-    private RustFsStorageService rustFsStorageService;
-    
-    @Autowired
-    private ChunkingService chunkingService;
-    
+
     /**
      * Tika 实例（用于简单操作，如 MIME 检测）
      */
@@ -50,7 +40,7 @@ public class TikaParseService {
     private static final int MAX_TEXT_LENGTH = 10 * 1024 * 1024;
 
     /**
-     * 解析文件，提取文本和元数据（不上传到 RustFS）
+     * 解析文件，提取文本和元数据
      *
      * @param file 上传的文件
      * @return 解析结果
@@ -62,21 +52,29 @@ public class TikaParseService {
         }
 
         String originalFilename = file.getOriginalFilename();
-        log.info("开始解析文件：{}, 大小：{} bytes", originalFilename, file.getSize());
+        log.info("开始解析文件: {}, 大小: {} bytes", originalFilename, file.getSize());
 
         try (InputStream inputStream = file.getInputStream()) {
 
             // 2. 检测 MIME 类型
+            // 注意：这里需要重新获取流，因为检测会消费流
             String mimeType;
             try (InputStream detectStream = file.getInputStream()) {
                 mimeType = tika.detect(detectStream, originalFilename);
             }
-            log.info("检测到 MIME 类型：{}", mimeType);
+            log.info("检测到 MIME 类型: {}", mimeType);
 
             // 3. 准备解析器组件
+            // BodyContentHandler: 用于接收解析出的文本内容
+            // 参数 MAX_TEXT_LENGTH 限制最大文本长度，防止内存溢出
             BodyContentHandler handler = new BodyContentHandler(MAX_TEXT_LENGTH);
+
+            // Metadata: 用于存储元数据
             Metadata metadata = new Metadata();
+            // 设置文件名，帮助解析器识别
             metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, originalFilename);
+
+            // ParseContext: 解析上下文，可以配置额外选项
             ParseContext context = new ParseContext();
 
             // 4. 执行解析
@@ -86,161 +84,38 @@ public class TikaParseService {
 
             // 5. 获取解析结果
             String content = handler.toString();
+
+            // 6. 清洗文本（去除多余空白）
             content = cleanText(content);
+
+            // 7. 提取元数据
             Map<String, String> metadataMap = extractMetadata(metadata);
 
-            // 6. 检查解析质量
+            // 8. 检查解析质量
             if (content.isEmpty()) {
                 log.warn("文件 {} 解析结果为空，可能是扫描件或加密文档", originalFilename);
                 return ParseResult.failure("解析结果为空，可能是扫描件或加密文档");
             }
 
-            log.info("文件 {} 解析成功，提取文本长度：{}", originalFilename, content.length());
+            log.info("文件 {} 解析成功，提取文本长度: {}", originalFilename, content.length());
             return ParseResult.success(mimeType, content, metadataMap);
 
         } catch (IOException e) {
-            log.error("读取文件失败：{}", originalFilename, e);
-            return ParseResult.failure("读取文件失败：" + e.getMessage());
+            log.error("读取文件失败: {}", originalFilename, e);
+            return ParseResult.failure("读取文件失败: " + e.getMessage());
 
         } catch (TikaException e) {
-            log.error("Tika 解析失败：{}", originalFilename, e);
-            return ParseResult.failure("文档解析失败：" + e.getMessage());
+            log.error("Tika 解析失败: {}", originalFilename, e);
+            return ParseResult.failure("文档解析失败: " + e.getMessage());
 
         } catch (SAXException e) {
-            log.error("XML 解析失败：{}", originalFilename, e);
-            return ParseResult.failure("文档结构解析失败：" + e.getMessage());
+            log.error("XML 解析失败: {}", originalFilename, e);
+            return ParseResult.failure("文档结构解析失败: " + e.getMessage());
 
         } catch (Exception e) {
-            log.error("未知错误：{}", originalFilename, e);
-            return ParseResult.failure("解析过程中发生未知错误：" + e.getMessage());
+            log.error("未知错误: {}", originalFilename, e);
+            return ParseResult.failure("解析过程中发生未知错误: " + e.getMessage());
         }
-    }
-
-    /**
-     * 解析文件并上传到 RustFS
-     *
-     * @param file 上传的文件
-     * @return 解析结果（包含 RustFS 文件 URL）
-     */
-    public ParseResult parseAndUploadToFile(MultipartFile file) {
-        // 1. 基本校验
-        if (file == null || file.isEmpty()) {
-            return ParseResult.failure("文件为空");
-        }
-
-        String originalFilename = file.getOriginalFilename();
-        log.info("开始解析文件：{}, 大小：{} bytes", originalFilename, file.getSize());
-
-        try (InputStream inputStream = file.getInputStream()) {
-
-            // 2. 检测 MIME 类型
-            String mimeType;
-            try (InputStream detectStream = file.getInputStream()) {
-                mimeType = tika.detect(detectStream, originalFilename);
-            }
-            log.info("检测到 MIME 类型：{}", mimeType);
-
-            // 3. 上传原始文件到 RustFS
-            String fileUrl = rustFsStorageService.uploadFile(
-                inputStream, 
-                originalFilename, 
-                mimeType != null ? mimeType : "application/octet-stream"
-            );
-
-            // 4. 准备解析器组件
-            BodyContentHandler handler = new BodyContentHandler(MAX_TEXT_LENGTH);
-            Metadata metadata = new Metadata();
-            metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, originalFilename);
-            ParseContext context = new ParseContext();
-
-            // 5. 执行解析
-            try (InputStream parseStream = file.getInputStream()) {
-                parser.parse(parseStream, handler, metadata, context);
-            }
-
-            // 6. 获取解析结果
-            String content = handler.toString();
-            content = cleanText(content);
-            Map<String, String> metadataMap = extractMetadata(metadata);
-
-            // 7. 检查解析质量
-            if (content.isEmpty()) {
-                log.warn("文件 {} 解析结果为空，可能是扫描件或加密文档", originalFilename);
-                return ParseResult.failure("解析结果为空，可能是扫描件或加密文档");
-            }
-
-            log.info("文件 {} 解析成功，提取文本长度：{}, RustFS URL: {}", 
-                originalFilename, content.length(), fileUrl);
-            
-            ParseResult result = ParseResult.success(mimeType, content, metadataMap);
-            result.setFileUrl(fileUrl); // 设置 RustFS 文件 URL
-            return result;
-
-        } catch (IOException e) {
-            log.error("读取文件失败：{}", originalFilename, e);
-            return ParseResult.failure("读取文件失败：" + e.getMessage());
-
-        } catch (TikaException e) {
-            log.error("Tika 解析失败：{}", originalFilename, e);
-            return ParseResult.failure("文档解析失败：" + e.getMessage());
-
-        } catch (SAXException e) {
-            log.error("XML 解析失败：{}", originalFilename, e);
-            return ParseResult.failure("文档结构解析失败：" + e.getMessage());
-
-        } catch (Exception e) {
-            log.error("未知错误：{}", originalFilename, e);
-            return ParseResult.failure("解析过程中发生未知错误：" + e.getMessage());
-        }
-    }
-
-    /**
-     * 解析文件并上传到 RustFS，然后进行分块
-     *
-     * @param file 上传的文件
-     * @param chunkSize 分块大小
-     * @param overlapSize 重叠大小
-     * @return 解析结果（包含分块和 RustFS 文件 URL）
-     */
-    public ParseResult parseUploadAndChunk(MultipartFile file, int chunkSize, int overlapSize) {
-        return parseUploadAndChunk(file, "fixed-size", chunkSize, overlapSize);
-    }
-    
-    /**
-     * 解析文件并上传到 RustFS，然后进行分块（可指定策略）
-     *
-     * @param file 上传的文件
-     * @param strategy 分块策略
-     * @param chunkSize 分块大小
-     * @param overlapSize 重叠大小
-     * @return 解析结果（包含分块和 RustFS 文件 URL）
-     */
-    public ParseResult parseUploadAndChunk(MultipartFile file, String strategy, int chunkSize, int overlapSize) {
-        // 1. 先解析文件并上传到 RustFS
-        ParseResult result = parseAndUploadToFile(file);
-        
-        if (!result.isSuccess()) {
-            return result;
-        }
-        
-        // 2. 执行分块
-        try {
-            ChunkingConfig config = new ChunkingConfig(chunkSize, overlapSize);
-            List<TextChunk> chunks = chunkingService.chunk(result.getContent(), strategy, config);
-            result.setChunks(chunks);
-            result.setChunkingStrategy(strategy);
-            result.setChunkCount(chunks.size());
-            result.setChunkingConfig(config);
-            
-            log.info("文件 {} 分块完成，策略：{}，chunkSize={}, overlap={}，分块数：{}", 
-                file.getOriginalFilename(), strategy, chunkSize, overlapSize, chunks.size());
-        } catch (Exception e) {
-            log.error("文件 {} 分块失败：{}", file.getOriginalFilename(), e.getMessage());
-            result.setSuccess(false);
-            result.setErrorMessage("分块失败：" + e.getMessage());
-        }
-        
-        return result;
     }
 
     /**

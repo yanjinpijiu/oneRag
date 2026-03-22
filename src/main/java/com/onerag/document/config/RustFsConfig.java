@@ -1,6 +1,6 @@
 package com.onerag.document.config;
 
-import com.onerag.document.service.RustFsProperties;
+import com.onerag.document.config.RustFsProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +19,9 @@ import java.net.URI;
 @Configuration
 @RequiredArgsConstructor
 public class RustFsConfig {
-    
+
     private final RustFsProperties properties;
-    
+
     /**
      * 配置 S3 Client Bean
      */
@@ -29,19 +29,27 @@ public class RustFsConfig {
     public S3Client s3Client() {
         // 创建凭证
         AwsBasicCredentials credentials = AwsBasicCredentials.create(
-            properties.getAccessKeyId(),
-            properties.getSecretAccessKey()
-        );
-        
+                properties.getAccessKeyId(),
+                properties.getSecretAccessKey());
+
         // 构建 S3Client
         S3ClientBuilder builder = S3Client.builder()
-            .region(Region.of("auto")) // RustFS 通常使用 auto region
-            .credentialsProvider(StaticCredentialsProvider.create(credentials))
-            .endpointOverride(URI.create(properties.getUrl()))
-            .serviceConfiguration(S3Configuration.builder()
-                .pathStyleAccessEnabled(true) // 启用路径式访问
-                .build());
-        
-        return builder.build();
+                .endpointOverride(URI.create(properties.getUrl()))
+                .region(Region.US_EAST_1) // RustFS 不校验 region，可写死
+                .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                .forcePathStyle(true); // 关键配置！RustFS 需启用 Path-Style 访问方式
+
+        S3Client client = builder.build();
+
+        // 测试连接
+        try {
+            client.listBuckets();
+            System.out.println("S3Client连接测试成功");
+        } catch (Exception e) {
+            System.out.println("S3Client连接测试失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return client;
     }
 }
