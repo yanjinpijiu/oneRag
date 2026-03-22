@@ -120,8 +120,8 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model: qwen3-max
-    deep-thinking-model: qwen3-max
+    default-model:  Pro/zai-org/GLM-4.7
+    deep-thinking-model: Pro/zai-org/GLM-4.7
     candidates:
       - id: qwen-plus
         provider: bailian
@@ -141,6 +141,12 @@ ai:
         provider: ollama
         model: qwen3:8b-fp16
         priority: 2
+#      - id: Qwen3.5-9B
+#        provider: siliconflow
+#        model: Qwen/Qwen3.5-9B
+#        supports-thinking: true
+#        priority: 0
+
 
 #  embedding:
 #    default-model: qwen-emb-8b
