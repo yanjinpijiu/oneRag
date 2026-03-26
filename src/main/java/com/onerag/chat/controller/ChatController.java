@@ -46,6 +46,7 @@ public class ChatController {
 
         executor.submit(() -> {
             try {
+                // 从向量数据库中进行向量检索 （用户发送的语句数据库中的内容）
                 List<RetrievedChunk> retrievedChunks = milvusRetrieverService.retrieve(chatReqDTO.getMessage());
 
                 String context = null;
@@ -111,7 +112,7 @@ public class ChatController {
                         }
                     }
                 };
-
+                // 调用大模型进行流式输出
                 chatModelService.streamChat(chatReqDTO.getMessage(), context, callback);
 
             } catch (Exception e) {

@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static com.onerag.chat.DTO.PromptDTO.PROMPT_TEMPLATE;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -25,7 +27,10 @@ public class ChatServiceImpl implements ChatService {
         try {
             log.info("收到用户消息：{}", message);
 
+
+            //向量检索
             List<RetrievedChunk> retrievedChunks = milvusRetrieverService.retrieve(message);
+
 
             if (retrievedChunks.isEmpty()) {
                 log.info("未检索到相关文档片段，直接使用大模型回答");
