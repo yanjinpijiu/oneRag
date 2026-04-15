@@ -1,64 +1,66 @@
 package com.onerag.chat.service.impl;
 
 import com.onerag.chat.DTO.resp.ChatRespDTO;
+import com.onerag.chat.orchestrator.ChatOrchestratorService;
+import com.onerag.chat.orchestrator.OrchestrationResult;
 import com.onerag.chat.service.ChatModelService;
 import com.onerag.chat.service.ChatService;
-import com.onerag.document.dto.RetrievedChunk;
-import com.onerag.document.service.MilvusRetrieverService;
+import com.onerag.chat.service.ConversationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.stream.Collectors;
-
-import static com.onerag.chat.DTO.PromptDTO.PROMPT_TEMPLATE;
-
+/**
+ * 同步问答服务实现。
+ * 负责串联编排层与模型层，并在返回前落库助手消息。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
-    private final MilvusRetrieverService milvusRetrieverService;
+    private final ChatOrchestratorService chatOrchestratorService;
     private final ChatModelService chatModelService;
+    private final ConversationService conversationService;
 
+    /**
+     * 执行一次同步问答流程：
+     * 1) 编排上下文 2) 调用模型 3) 记录回复并维护标题。
+     */
     @Override
-    public ChatRespDTO sendAChat(String message) {
+    public ChatRespDTO sendAChat(String message, String conversationId) {
         try {
-            log.info("收到用户消息：{}", message);
+            OrchestrationResult result = chatOrchestratorService.orchestrate(message, conversationId);
+            long llmStart = System.currentTimeMillis();
+            ChatRespDTO response = chatModelService.chat(message, result.getFullContext());
 
+            // 添加助手回复到对话
+            conversationService.addMessage(result.getConversationId(), "default", "assistant", response.getMessage());
 
-            //向量检索
-            List<RetrievedChunk> retrievedChunks = milvusRetrieverService.retrieve(message);
-
-
-            if (retrievedChunks.isEmpty()) {
-                log.info("未检索到相关文档片段，直接使用大模型回答");
-                return chatModelService.chat(message, null);
+            // 更新对话标题（如果是第一条消息）
+            if (conversationService.getConversationMessages(result.getConversationId()).size() == 2) {
+                conversationService.updateConversationTitle(result.getConversationId(),
+                        response.getMessage().length() > 20 ? response.getMessage().substring(0, 20) + "..."
+                                : response.getMessage());
             }
 
-            String context = buildContext(retrievedChunks);
-            log.info("构建的上下文长度：{}，检索到 {} 个文档片段", context.length(), retrievedChunks.size());
-
-            ChatRespDTO response = chatModelService.chat(message, context);
-
-            log.info("成功返回回答，长度：{}", response.getMessage().length());
+            log.info("chat-sync|requestId={}|conversationId={}|orchestrateMs={}|llmMs={}|replyLen={}",
+                    result.getRequestId(), result.getConversationId(), result.getTotalCostMs(),
+                    System.currentTimeMillis() - llmStart, response.getMessage().length());
+            response.setConversationId(result.getConversationId());
             return response;
 
         } catch (Exception e) {
             log.error("处理聊天请求失败", e);
-            return new ChatRespDTO("抱歉，处理您的请求时出现错误：" + e.getMessage());
+            return new ChatRespDTO("抱歉，处理您的请求时出现错误：" + e.getMessage(), conversationId);
         }
     }
 
-    private String buildContext(List<RetrievedChunk> chunks) {
-        if (chunks == null || chunks.isEmpty()) {
-            return "";
-        }
-
-        return chunks.stream()
-                .map(chunk -> String.format("[文档片段%d - 相似度:%.2f]\n%s\n",
-                        chunk.getChunkIndex(), chunk.getScore(), chunk.getContent()))
-                .collect(Collectors.joining("\n"));
+    /**
+     * 新会话快捷入口。
+     */
+    @Override
+    public ChatRespDTO sendAChat(String message) {
+        return sendAChat(message, null);
     }
 }
