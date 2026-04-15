@@ -1,5 +1,10 @@
 server:
   port: 8080
+  # 与 spring.servlet.multipart 对齐；Tomcat 默认 max-http-form-post-size 较小，
+  # 仅调 multipart 仍可能被连接器拒绝，导致 MaxUploadSizeExceededException
+  tomcat:
+    max-http-form-post-size: 500MB
+    max-swallow-size: 500MB
 
 spring:
   application:
@@ -7,17 +12,16 @@ spring:
 
   servlet:
     multipart:
-      # ????????
-      max-file-size: 50MB
-      # ????????
-      max-request-size: 50MB
+      enabled: true
+      max-file-size: 500MB
+      max-request-size: 500MB
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.zaxxer.hikari.HikariDataSource
     username: root
     password: root
-    url: jdbc:mysql://192.168.100.128:3309/ragent?characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://192.168.100.128:3309/oneRagent?characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
     hikari:
       connection-timeout: 5000
       idle-timeout: 600000
@@ -41,6 +45,24 @@ milvus:
     name: documents
 
 rag:
+  chat:
+    query-rewrite-enabled: true
+    intent-enabled: true
+    retrieval-enabled: true
+    max-context-chars: 4000
+    max-rag-chunks: 5
+    max-rag-context-chars: 3000
+    retrieval-top-k: 5
+    bm25-enabled: false
+    cache-ttl-millis: 60000
+    # 含编排（改写/意图/检索等）在首次 SSE 推送前可能数十秒～数分钟；过短会先 onTimeout 再等大模型返回
+    sse-timeout-millis: 600000
+    # 改写/意图 HTTP 整次调用上限（connect+read+排队首包）
+    rewrite-timeout-ms: 20000
+    intent-timeout-ms: 20000
+    # 极短句改写收益低，且与意图并行时易占满慢一路超时；设为 8 时「我叫什么」等会跳过改写
+    query-rewrite-skip-if-shorter-than-or-equal: 8
+
   default:
     collection-name: rag_default_store
     dimension: 4096
@@ -120,8 +142,15 @@ ai:
     message-chunk-size: 1
 
   chat:
-    default-model:  Pro/zai-org/GLM-4.7
-    deep-thinking-model: Pro/zai-org/GLM-4.7
+    default-model: Pro/zai-org/GLM-5
+    rewrite-intent-model: Pro/zai-org/GLM-5
+    deep-thinking-model: Qwen/Qwen3.5-35B-A3B
+    thinking-budget:
+      chat: 1024
+      stream-default: 1
+      stream-deep: 2048
+      rewrite: 512
+      intent: 512
     candidates:
       - id: qwen-plus
         provider: bailian
@@ -132,9 +161,9 @@ ai:
         model: qwen3-max
         supports-thinking: true
         priority: 3
-      - id: glm-4.7
+      - id: Pro/zai-org/GLM-5
         provider: siliconflow
-        model: Pro/zai-org/GLM-4.7
+        model: Pro/zai-org/GLM-5
         supports-thinking: true
         priority: 0
       - id: qwen3-local
