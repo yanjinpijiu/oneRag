@@ -5,7 +5,6 @@ import org.apache.poi.ss.formula.functions.T;
 
 /**
  * 全局返回对象
- *
  */
 @Data
 public class Result {
@@ -34,6 +33,9 @@ public class Result {
      */
     private String requestId;
 
+    /**
+     * 是否为成功响应。
+     */
     public boolean isSuccess() {
         return SUCCESS_CODE.equals(code);
     }
