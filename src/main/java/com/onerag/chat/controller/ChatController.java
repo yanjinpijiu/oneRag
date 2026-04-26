@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -118,7 +119,7 @@ public class ChatController {
      * 主流程：编排 -> 模型流式回调 -> 事件透传 -> 会话落库。
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamChat(@RequestBody ChatReqDTO chatReqDTO) {
+    public SseEmitter streamChat(@RequestBody ChatReqDTO chatReqDTO, HttpServletRequest request) {
         StpUtil.checkLogin();
         String currentUserId = String.valueOf(StpUtil.getLoginId());
         validateConversationAccess(chatReqDTO.getConversationId(), currentUserId);
@@ -139,6 +140,17 @@ public class ChatController {
                 OrchestrationResult orchestration = chatOrchestratorService.orchestrate(
                         message, chatReqDTO.getConversationId(), currentUserId);
                 String conversationId = orchestration.getConversationId();
+                // #region agent log
+                String debugRunHeader = request == null ? "" : String.valueOf(request.getHeader("X-Debug-Run-Id"));
+                String debugPrevClientStats = request == null ? "" : String.valueOf(request.getHeader("X-Debug-Prev-Client-Stats"));
+                debugLog3170("run7", "H9", "stream.start", String.format(
+                        "{\"conversationId\":\"%s\",\"requestId\":\"%s\",\"deepThinking\":%s,\"debugRunHeader\":\"%s\",\"debugPrevClientStats\":\"%s\"}",
+                        escapeJson(conversationId),
+                        escapeJson(orchestration.getRequestId()),
+                        deepThinking,
+                        escapeJson(debugRunHeader),
+                        escapeJson(debugPrevClientStats)));
+                // #endregion
                 long llmStart = System.currentTimeMillis();
                 String referencesPayload = buildReferencesPayload(orchestration.getRetrievedChunks());
 
@@ -156,6 +168,12 @@ public class ChatController {
                     private StringBuilder reasoningResponse = new StringBuilder();
                     private boolean referencesSent = false;
                     private int streamedExtractLen = 0;
+                    private long firstReasoningAt = -1L;
+                    private long firstContentAt = -1L;
+                    private int reasoningChunks = 0;
+                    private int contentChunks = 0;
+                    private long firstExtractContentAt = -1L;
+                    private int extractContentChunks = 0;
 
                     private void sendReferencesOnce() {
                         if (referencesSent) {
@@ -194,18 +212,33 @@ public class ChatController {
                         }
                         try {
                             String reasoningChunk = reasoning == null ? "" : reasoning;
+                            if (firstReasoningAt < 0 && !reasoningChunk.isEmpty()) {
+                                firstReasoningAt = System.currentTimeMillis();
+                            }
+                            if (!reasoningChunk.isEmpty()) {
+                                reasoningChunks++;
+                            }
                             if (deepThinking) {
                                 emitter.send(SseEmitter.event()
                                         .name("reasoning")
                                         .data(reasoningChunk));
                             }
                             reasoningResponse.append(reasoningChunk);
+                            // #region agent log
+                            debugLog3170("run4", "H6", "stream.reasoning", String.format(
+                                    "{\"chunkLen\":%d,\"accReasoningLen\":%d}",
+                                    reasoningChunk.length(), reasoningResponse.length()));
+                            // #endregion
                             if (!deepThinking) {
                                 String streamedAnswer = SiliconFlowAssistantText
                                         .extractFinalAnswerForStreaming(reasoningResponse.toString());
                                 if (!streamedAnswer.isBlank() && streamedAnswer.length() > streamedExtractLen) {
                                     String delta = streamedAnswer.substring(streamedExtractLen);
                                     if (!delta.isEmpty()) {
+                                        if (firstExtractContentAt < 0) {
+                                            firstExtractContentAt = System.currentTimeMillis();
+                                        }
+                                        extractContentChunks++;
                                         emitter.send(SseEmitter.event()
                                                 .name("content")
                                                 .data(delta));
@@ -214,7 +247,8 @@ public class ChatController {
                                         sendReferencesOnce();
                                         debugLog("stream:onReasoning:extract-stream-append", "H18", Map.of(
                                                 "deltaLen", delta.length(),
-                                                "streamedLen", streamedExtractLen
+                                                "streamedLen", streamedExtractLen,
+                                                "deepThinking", deepThinking
                                         ));
                                     }
                                 }
@@ -240,7 +274,18 @@ public class ChatController {
                             emitter.send(SseEmitter.event()
                                     .name("content")
                                     .data(content));
+                            if (firstContentAt < 0 && content != null && !content.isEmpty()) {
+                                firstContentAt = System.currentTimeMillis();
+                            }
+                            if (content != null && !content.isEmpty()) {
+                                contentChunks++;
+                            }
                             fullResponse.append(content);
+                            // #region agent log
+                            debugLog3170("run4", "H6", "stream.content", String.format(
+                                    "{\"chunkLen\":%d,\"accContentLen\":%d}",
+                                    content == null ? 0 : content.length(), fullResponse.length()));
+                            // #endregion
                             sendReferencesOnce();
                             // #region agent log
                             debugLog("stream:onContent:append", "H4", Map.of(
@@ -351,6 +396,18 @@ public class ChatController {
                             emitter.send(SseEmitter.event()
                                     .name("done")
                                     .data(""));
+                            // #region agent log
+                            debugLog3170("run7", "H9", "stream.done", String.format(
+                                    "{\"reasoningLen\":%d,\"contentLen\":%d,\"reasoningChunks\":%d,\"contentChunks\":%d,\"extractContentChunks\":%d,\"firstReasoningDelayMs\":%d,\"firstContentDelayMs\":%d,\"firstExtractContentDelayMs\":%d}",
+                                    reasoningResponse.length(),
+                                    responseContent.length(),
+                                    reasoningChunks,
+                                    contentChunks,
+                                    extractContentChunks,
+                                    firstReasoningAt < 0 ? -1 : (firstReasoningAt - llmStart),
+                                    firstContentAt < 0 ? -1 : (firstContentAt - llmStart),
+                                    firstExtractContentAt < 0 ? -1 : (firstExtractContentAt - llmStart)));
+                            // #endregion
                             emitter.complete();
                             log.info("流式输出完成");
 
@@ -504,6 +561,19 @@ public class ChatController {
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
     }
+
+    // #region agent log
+    private void debugLog3170(String runId, String hypothesisId, String message, String dataJson) {
+        try {
+            String payload = String.format(
+                    "{\"sessionId\":\"3170f1\",\"runId\":\"%s\",\"hypothesisId\":\"%s\",\"location\":\"ChatController.java\",\"message\":\"%s\",\"data\":%s,\"timestamp\":%d}",
+                    runId, hypothesisId, message, dataJson, System.currentTimeMillis());
+            Files.writeString(Path.of("debug-3170f1.log"), payload + System.lineSeparator(),
+                    StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+        }
+    }
+    // #endregion
 
     private void validateConversationAccess(String conversationId, String userId) {
         if (conversationId == null || conversationId.isBlank()) {
