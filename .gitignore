@@ -40,3 +40,5 @@ node_modules/
 dist/
 .vite/
 .env.local
+debug-*.log
+INTERVIEW_NOTES.md
