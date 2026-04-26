@@ -28,6 +28,7 @@
       </el-card>
 
       <div class="chat-content">
+        <div class="chat-flow-layer" aria-hidden="true"></div>
         <el-form inline>
           <el-form-item label="深度思考">
             <el-switch v-model="deepThinking" />
@@ -43,44 +44,60 @@
 
         <div ref="messageContainerRef" class="chat-message-list">
           <el-skeleton v-if="loadingMessages" :rows="4" animated />
-          <div v-else-if="!messages.length" class="chat-empty">开始提问后会自动创建会话</div>
+          <div v-else-if="!messages.length" class="chat-empty">
+            <div class="chat-empty-title">开始新对话</div>
+            <div class="chat-empty-desc">你可以先试试这些常见问题：</div>
+            <div class="chat-suggestions">
+              <el-tag
+                v-for="q in starterQuestions"
+                :key="q"
+                class="chat-suggestion-tag"
+                type="info"
+                effect="plain"
+                @click="useStarterQuestion(q)">
+                {{ q }}
+              </el-tag>
+            </div>
+          </div>
           <div v-else-if="hasOlderMessages" class="history-toggle">
             <el-button size="small" plain @click="showOlderHistory">显示更早历史对话（10条）</el-button>
           </div>
-          <div
-            v-for="(item, idx) in visibleMessages"
-            :key="`${idx}-${item.role}`"
-            :class="['message-row', item.role === 'user' ? 'user' : 'assistant']">
-            <div class="message-bubble">
-              <div class="message-meta">
-                <span>{{ item.role === 'user' ? '我' : '助手' }}</span>
-                <span>{{ formatMessageTime(item.createTime) }}</span>
+          <transition-group name="message-fade" tag="div" class="message-group">
+            <div
+              v-for="(item, idx) in visibleMessages"
+              :key="`${idx}-${item.role}`"
+              :class="['message-row', item.role === 'user' ? 'user' : 'assistant']">
+              <div class="message-bubble">
+                <div class="message-meta">
+                  <span>{{ item.role === 'user' ? '我' : '助手' }}</span>
+                  <span>{{ formatMessageTime(item.createTime) }}</span>
+                </div>
+                <el-skeleton v-if="item.loading && !item.content && !item.reasoning && !(item._streaming && (streamingReasoningText || streamingContentText))" :rows="2" animated />
+                <div v-if="item.loading && item._streaming && streamingReasoningText" class="reasoning-live">
+                  <div class="reasoning-live-title">思考过程（流式）</div>
+                  <div style="white-space:pre-wrap">{{ streamingReasoningText }}</div>
+                </div>
+                <el-collapse v-else-if="item.reasoning">
+                  <el-collapse-item title="思考过程">
+                    <div style="white-space:pre-wrap">{{ item.reasoning }}</div>
+                  </el-collapse-item>
+                </el-collapse>
+                <div :class="['content-text', { streaming: item.loading && item._streaming }]">{{ item.loading && item._streaming ? streamingContentText : item.content }}</div>
+                <div v-if="item.model" class="message-model">模型：{{ item.model }}</div>
+                <el-collapse v-if="item.references?.length">
+                  <el-collapse-item title="参考资料">
+                    <div v-for="(refItem, refIdx) in item.references" :key="refIdx" style="margin-bottom:10px">
+                      <el-card shadow="never">
+                        <div><b>[{{ refItem.index }}] {{ refItem.title }}</b></div>
+                        <div style="color:#888;font-size:12px">docId={{ refItem.docId }} | score={{ refItem.score }}</div>
+                        <div style="white-space:pre-wrap;margin-top:6px">{{ refItem.content }}</div>
+                      </el-card>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
               </div>
-              <el-skeleton v-if="item.loading && !item.content && !item.reasoning && !(item._streaming && (streamingReasoningText || streamingContentText))" :rows="2" animated />
-              <div v-if="item.loading && item._streaming && streamingReasoningText" class="reasoning-live">
-                <div class="reasoning-live-title">思考过程（流式）</div>
-                <div style="white-space:pre-wrap">{{ streamingReasoningText }}</div>
-              </div>
-              <el-collapse v-else-if="item.reasoning">
-                <el-collapse-item title="思考过程">
-                  <div style="white-space:pre-wrap">{{ item.reasoning }}</div>
-                </el-collapse-item>
-              </el-collapse>
-              <div style="margin-top:6px;white-space:pre-wrap">{{ item.loading && item._streaming ? streamingContentText : item.content }}</div>
-              <div v-if="item.model" class="message-model">模型：{{ item.model }}</div>
-              <el-collapse v-if="item.references?.length">
-                <el-collapse-item title="参考资料">
-                  <div v-for="(refItem, refIdx) in item.references" :key="refIdx" style="margin-bottom:10px">
-                    <el-card shadow="never">
-                      <div><b>[{{ refItem.index }}] {{ refItem.title }}</b></div>
-                      <div style="color:#888;font-size:12px">docId={{ refItem.docId }} | score={{ refItem.score }}</div>
-                      <div style="white-space:pre-wrap;margin-top:6px">{{ refItem.content }}</div>
-                    </el-card>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
             </div>
-          </div>
+          </transition-group>
         </div>
 
         <el-input
@@ -90,7 +107,7 @@
           placeholder="输入问题，Enter发送（Shift+Enter换行）"
           style="margin-top:12px"
           @keydown.enter.exact.prevent="send" />
-        <el-button type="primary" style="margin-top:8px" :loading="sending" @click="send">发送</el-button>
+        <el-button type="primary" class="send-btn" :loading="sending" @click="send">发送</el-button>
       </div>
     </div>
   </div>
@@ -116,6 +133,13 @@ const pipelineLog = ref('')
 const messageContainerRef = ref(null)
 const streamingReasoningText = ref('')
 const streamingContentText = ref('')
+const starterQuestions = [
+  '你好，你是谁？',
+  '你能帮我做什么？',
+  '奖学金申请条件是什么？',
+  '毕业设计流程怎么安排？',
+  '图书馆开放时间是几点？'
+]
 const authStore = useAuthStore()
 const visibleMessages = computed(() => {
   const total = messages.value.length
@@ -189,6 +213,11 @@ const scheduleScrollToBottom = () => {
 const showOlderHistory = async () => {
   historyVisibleCount.value += 10
   await nextTick()
+}
+
+const useStarterQuestion = (text) => {
+  if (sending.value) return
+  message.value = text
 }
 
 const loadMessages = async (conversationId, silent = false) => {
@@ -647,13 +676,18 @@ onMounted(async () => {
 <style scoped>
 .chat-layout {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: stretch;
 }
 
 .chat-sidebar {
   width: 280px;
   flex-shrink: 0;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glass-shadow);
 }
 
 .chat-sidebar-header {
@@ -670,19 +704,30 @@ onMounted(async () => {
 }
 
 .chat-conversation-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
   padding: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.chat-conversation-item:hover {
+  transform: translateY(-1px);
+  border-color: #d4def2;
+  box-shadow: 0 6px 14px rgba(31, 42, 68, 0.06);
 }
 
 .chat-conversation-item.active {
-  border-color: #409eff;
-  background: #f5f9ff;
+  border-color: var(--brand);
+  background: linear-gradient(135deg, rgba(234, 240, 255, 0.85) 0%, rgba(243, 247, 255, 0.82) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 8px 18px rgba(79, 124, 255, 0.16);
+  backdrop-filter: blur(8px);
 }
 
 .chat-sidebar-actions {
@@ -710,12 +755,36 @@ onMounted(async () => {
 .chat-content {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+.chat-flow-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(79, 124, 255, 0.09) 0%, rgba(79, 124, 255, 0) 50%),
+    radial-gradient(circle at 88% 22%, rgba(119, 151, 255, 0.08) 0%, rgba(119, 151, 255, 0) 52%),
+    radial-gradient(circle at 50% 94%, rgba(103, 173, 255, 0.07) 0%, rgba(103, 173, 255, 0) 48%);
+  animation: chatBgFlow 18s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+.chat-content > * {
+  position: relative;
+  z-index: 1;
 }
 
 .pipeline-floating {
   position: sticky;
   top: 0;
   z-index: 2;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glass-shadow);
 }
 
 .pipeline-log {
@@ -736,13 +805,48 @@ onMounted(async () => {
 }
 
 .chat-empty {
-  color: #909399;
-  padding: 8px 0;
+  color: var(--text-secondary);
+  padding: 8px 0 12px;
+}
+
+.chat-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chat-empty-desc {
+  margin-top: 6px;
+  color: var(--text-regular);
+}
+
+.chat-suggestions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chat-suggestion-tag {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chat-suggestion-tag:hover {
+  color: var(--brand);
+  border-color: #cfdcff;
+  background: var(--brand-soft);
 }
 
 .history-toggle {
   display: flex;
   justify-content: center;
+}
+
+.message-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .message-row {
@@ -759,15 +863,47 @@ onMounted(async () => {
 
 .message-bubble {
   max-width: 70%;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 18px rgba(31, 42, 68, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.message-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0) 36%),
+    radial-gradient(circle at 12% 10%, rgba(255, 255, 255, 0.56) 0%, rgba(255, 255, 255, 0) 40%);
+  opacity: 0.86;
+}
+
+.message-bubble::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 11px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  mix-blend-mode: screen;
 }
 
 .message-row.user .message-bubble {
-  background: #eaf4ff;
-  border-color: #bcdfff;
+  background: rgba(237, 243, 255, 0.84);
+  border-color: #d6e3ff;
+}
+
+.message-row.user .message-bubble::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0) 34%),
+    radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 42%);
 }
 
 .message-meta {
@@ -780,15 +916,15 @@ onMounted(async () => {
 
 .reasoning-live {
   margin-top: 6px;
-  border-left: 3px solid #67c23a;
-  background: #f3fff6;
+  border-left: 3px solid #86a9ff;
+  background: #f4f7ff;
   padding: 8px;
   border-radius: 6px;
 }
 
 .reasoning-live-title {
   font-size: 12px;
-  color: #67c23a;
+  color: #5f7fd9;
   margin-bottom: 4px;
 }
 
@@ -796,5 +932,64 @@ onMounted(async () => {
   margin-top: 6px;
   font-size: 12px;
   color: #909399;
+}
+
+.send-btn {
+  margin-top: 8px;
+  width: 104px;
+  border-radius: 10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.send-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(79, 124, 255, 0.22);
+}
+
+.message-fade-enter-active,
+.message-fade-leave-active {
+  transition: all 0.22s ease;
+}
+
+.message-fade-enter-from,
+.message-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.content-text {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  position: relative;
+}
+
+.content-text.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  background: rgba(79, 124, 255, 0.78);
+  border-radius: 2px;
+  animation: typingCursor 0.9s steps(1) infinite;
+}
+
+@keyframes typingCursor {
+  0%, 45% {
+    opacity: 1;
+  }
+  46%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes chatBgFlow {
+  0% {
+    transform: translate3d(-0.8%, -0.5%, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(0.8%, 0.6%, 0) scale(1.02);
+  }
 }
 </style>

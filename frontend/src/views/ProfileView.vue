@@ -1,6 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-card>
+    <el-card class="glass-panel profile-card" shadow="never">
       <template #header>个人资料</template>
       <el-form :model="profile" label-width="100px">
         <el-form-item label="昵称"><el-input v-model="profile.nickname" /></el-form-item>
@@ -8,16 +8,16 @@
         <el-form-item label="手机号"><el-input v-model="profile.phone" /></el-form-item>
         <el-form-item label="头像"><el-input v-model="profile.avatar" /></el-form-item>
       </el-form>
-      <el-button type="primary" @click="saveProfile">保存资料</el-button>
+      <el-button type="primary" class="profile-action-btn" @click="saveProfile">保存资料</el-button>
     </el-card>
 
-    <el-card style="margin-top:12px">
+    <el-card class="glass-panel profile-card password-card" shadow="never">
       <template #header>修改密码</template>
       <el-form :model="pwd" label-width="100px">
         <el-form-item label="旧密码"><el-input type="password" v-model="pwd.oldPassword" /></el-form-item>
         <el-form-item label="新密码"><el-input type="password" v-model="pwd.newPassword" /></el-form-item>
       </el-form>
-      <el-button type="warning" @click="changePassword">修改密码</el-button>
+      <el-button type="warning" class="profile-action-btn" @click="changePassword">修改密码</el-button>
     </el-card>
   </div>
 </template>
@@ -52,3 +52,23 @@ const changePassword = async () => {
 
 onMounted(loadProfile)
 </script>
+
+<style scoped>
+.profile-card {
+  border-radius: 14px;
+}
+
+.password-card {
+  margin-top: 12px;
+}
+
+.profile-action-btn {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.profile-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(31, 42, 68, 0.14);
+  filter: saturate(1.04);
+}
+</style>

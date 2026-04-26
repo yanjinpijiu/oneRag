@@ -1,72 +1,76 @@
 <template>
   <div class="page-wrap">
-    <el-form inline>
-      <el-form-item label="状态">
-        <el-select v-model="query.status" clearable style="width: 180px" @change="loadData">
-          <el-option label="未处理" value="UNPROCESSED" />
-          <el-option label="运行中" value="RUNNING" />
-          <el-option label="完成" value="COMPLETED" />
-          <el-option label="失败" value="FAILED" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="关键词">
-        <el-input v-model="query.keyword" placeholder="文件名模糊查询" clearable />
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="loadData">查询</el-button>
-      </el-form-item>
-      <el-form-item v-if="isAdmin">
-        <el-upload :http-request="customUpload" :show-file-list="false">
-          <el-button type="success">上传文件</el-button>
-        </el-upload>
-      </el-form-item>
-    </el-form>
+    <el-card class="glass-panel kb-filter-card" shadow="never">
+      <el-form inline>
+        <el-form-item label="状态">
+          <el-select v-model="query.status" clearable style="width: 180px" @change="loadData">
+            <el-option label="未处理" value="UNPROCESSED" />
+            <el-option label="运行中" value="RUNNING" />
+            <el-option label="完成" value="COMPLETED" />
+            <el-option label="失败" value="FAILED" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关键词">
+          <el-input v-model="query.keyword" placeholder="文件名模糊查询" clearable />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="loadData">查询</el-button>
+        </el-form-item>
+        <el-form-item v-if="isAdmin">
+          <el-upload :http-request="customUpload" :show-file-list="false">
+            <el-button type="success">上传文件</el-button>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
-    <el-table :data="records" style="margin-top: 12px" v-loading="loading" border>
-      <el-table-column prop="fileName" label="文件名" min-width="260" />
-      <el-table-column label="大小" width="120">
-        <template #default="{ row }">{{ formatSize(row.fileSize) }}</template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="130">
-        <template #default="{ row }">
-          <el-tag :type="statusType(row.status)">{{ row.status }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="chunkCount" label="分片数" width="100" />
-      <el-table-column prop="vectorCount" label="向量数" width="100" />
-      <el-table-column label="更新时间" min-width="170">
-        <template #default="{ row }">{{ formatTime(row.updateTime || row.createTime) }}</template>
-      </el-table-column>
-      <el-table-column label="失败原因" min-width="220">
-        <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="操作" min-width="280" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="download(row)">下载</el-button>
-          <el-button
-            v-if="isAdmin"
-            link
-            type="success"
-            :disabled="row.status === 'RUNNING'"
-            @click="processDoc(row)">
-            {{ row.status === 'COMPLETED' ? '重处理' : '处理' }}
-          </el-button>
-          <el-button v-if="isAdmin" link type="danger" @click="removeDoc(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-card class="glass-panel kb-table-card" shadow="never">
+      <el-table :data="records" v-loading="loading" border>
+        <el-table-column prop="fileName" label="文件名" min-width="260" />
+        <el-table-column label="大小" width="120">
+          <template #default="{ row }">{{ formatSize(row.fileSize) }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="130">
+          <template #default="{ row }">
+            <el-tag :type="statusType(row.status)">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="chunkCount" label="分片数" width="100" />
+        <el-table-column prop="vectorCount" label="向量数" width="100" />
+        <el-table-column label="更新时间" min-width="170">
+          <template #default="{ row }">{{ formatTime(row.updateTime || row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="失败原因" min-width="220">
+          <template #default="{ row }">{{ row.errorMessage || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="280" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="download(row)">下载</el-button>
+            <el-button
+              v-if="isAdmin"
+              link
+              type="success"
+              :disabled="row.status === 'RUNNING'"
+              @click="processDoc(row)">
+              {{ row.status === 'COMPLETED' ? '重处理' : '处理' }}
+            </el-button>
+            <el-button v-if="isAdmin" link type="danger" @click="removeDoc(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <div style="margin-top: 12px; display: flex; justify-content: flex-end">
-      <el-pagination
-        background
-        layout="total, prev, pager, next, sizes"
-        :total="total"
-        :current-page="query.pageNo"
-        :page-size="query.pageSize"
-        :page-sizes="[10, 20, 50]"
-        @current-change="onPageChange"
-        @size-change="onPageSizeChange" />
-    </div>
+      <div class="kb-pagination">
+        <el-pagination
+          background
+          layout="total, prev, pager, next, sizes"
+          :total="total"
+          :current-page="query.pageNo"
+          :page-size="query.pageSize"
+          :page-sizes="[10, 20, 50]"
+          @current-change="onPageChange"
+          @size-change="onPageSizeChange" />
+      </div>
+    </el-card>
   </div>
 </template>
 
@@ -228,3 +232,34 @@ onMounted(() => {
   loadData()
 })
 </script>
+
+<style scoped>
+.kb-filter-card {
+  border-radius: 14px;
+}
+
+.kb-table-card {
+  margin-top: 12px;
+  border-radius: 14px;
+}
+
+.kb-table-card :deep(.el-table) {
+  --el-table-border-color: rgba(212, 223, 242, 0.7);
+  --el-table-header-bg-color: rgba(245, 248, 255, 0.65);
+  --el-table-tr-bg-color: rgba(255, 255, 255, 0.35);
+}
+
+.kb-table-card :deep(.el-table__body tr) {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.kb-table-card :deep(.el-table__body tr:hover > td) {
+  background: linear-gradient(90deg, rgba(236, 244, 255, 0.82) 0%, rgba(245, 249, 255, 0.75) 100%) !important;
+}
+
+.kb-pagination {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+</style>

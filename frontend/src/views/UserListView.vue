@@ -1,55 +1,59 @@
 <template>
   <div class="page-wrap">
-    <el-form inline>
-      <el-form-item label="关键词">
-        <el-input v-model="query.keyword" placeholder="账号/昵称/邮箱/手机号" />
-      </el-form-item>
-      <el-form-item label="角色">
-        <el-select v-model="query.role" clearable style="width:120px">
-          <el-option label="user" value="user" />
-          <el-option label="admin" value="admin" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="query.status" clearable style="width:120px">
-          <el-option label="启用" :value="1" />
-          <el-option label="禁用" :value="0" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="loadUsers">查询</el-button>
-      </el-form-item>
-      <el-form-item>
-        <el-button @click="resetQuery">重置</el-button>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="success" @click="openCreate">新增用户</el-button>
-      </el-form-item>
-    </el-form>
+    <el-card class="glass-panel user-filter-card" shadow="never">
+      <el-form inline>
+        <el-form-item label="关键词">
+          <el-input v-model="query.keyword" placeholder="账号/昵称/邮箱/手机号" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="query.role" clearable style="width:120px">
+            <el-option label="user" value="user" />
+            <el-option label="admin" value="admin" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="query.status" clearable style="width:120px">
+            <el-option label="启用" :value="1" />
+            <el-option label="禁用" :value="0" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="loadUsers">查询</el-button>
+        </el-form-item>
+        <el-form-item>
+          <el-button @click="resetQuery">重置</el-button>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="success" @click="openCreate">新增用户</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
-    <el-table :data="records" style="width:100%;margin-top:12px">
-      <el-table-column prop="username" label="账号" />
-      <el-table-column prop="nickname" label="昵称" />
-      <el-table-column prop="email" label="邮箱" />
-      <el-table-column prop="phone" label="手机号" />
-      <el-table-column prop="role" label="角色" />
-      <el-table-column prop="status" label="状态" />
-      <el-table-column label="操作" width="220">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-card class="glass-panel user-table-card" shadow="never">
+      <el-table :data="records" style="width:100%">
+        <el-table-column prop="username" label="账号" />
+        <el-table-column prop="nickname" label="昵称" />
+        <el-table-column prop="email" label="邮箱" />
+        <el-table-column prop="phone" label="手机号" />
+        <el-table-column prop="role" label="角色" />
+        <el-table-column prop="status" label="状态" />
+        <el-table-column label="操作" width="220">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="remove(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <el-pagination
-      style="margin-top:12px"
-      background
-      layout="prev, pager, next, total"
-      :total="total"
-      :page-size="query.pageSize"
-      :current-page="query.pageNo"
-      @current-change="onPageChange" />
+      <el-pagination
+        class="user-pagination"
+        background
+        layout="prev, pager, next, total"
+        :total="total"
+        :page-size="query.pageSize"
+        :current-page="query.pageNo"
+        @current-change="onPageChange" />
+    </el-card>
 
     <el-dialog v-model="dialogVisible" :title="form.userId ? '编辑用户' : '新增用户'">
       <el-form :model="form" label-width="100px">
@@ -165,3 +169,28 @@ const remove = async (row) => {
 
 onMounted(loadUsers)
 </script>
+
+<style scoped>
+.user-filter-card {
+  border-radius: 14px;
+}
+
+.user-table-card {
+  margin-top: 12px;
+  border-radius: 14px;
+}
+
+.user-table-card :deep(.el-table) {
+  --el-table-border-color: rgba(212, 223, 242, 0.7);
+  --el-table-header-bg-color: rgba(245, 248, 255, 0.65);
+  --el-table-tr-bg-color: rgba(255, 255, 255, 0.35);
+}
+
+.user-table-card :deep(.el-table__body tr:hover > td) {
+  background: linear-gradient(90deg, rgba(236, 244, 255, 0.82) 0%, rgba(245, 249, 255, 0.75) 100%) !important;
+}
+
+.user-pagination {
+  margin-top: 12px;
+}
+</style>
