@@ -1,6 +1,7 @@
 package com.onerag.document.service;
 
 import com.onerag.document.dto.RetrievedChunk;
+import com.google.gson.JsonObject;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.data.BaseVector;
@@ -91,6 +92,16 @@ public class MilvusRetrieverService {
                                 if (t != null) {
                                     docTitle = t.toString();
                                 }
+                            }
+                        } else if (metadataObj instanceof JsonObject json) {
+                            if (json.has("doc_id") && !json.get("doc_id").isJsonNull()) {
+                                docId = json.get("doc_id").getAsString();
+                            }
+                            if (json.has("chunk_index") && !json.get("chunk_index").isJsonNull()) {
+                                chunkIndex = json.get("chunk_index").getAsInt();
+                            }
+                            if (json.has("doc_title") && !json.get("doc_title").isJsonNull()) {
+                                docTitle = json.get("doc_title").getAsString();
                             }
                         }
                     }
