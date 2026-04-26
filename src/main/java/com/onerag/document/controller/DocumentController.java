@@ -1,5 +1,6 @@
 package com.onerag.document.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.onerag.document.dto.ParseResult;
 import com.onerag.document.service.DocumentService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class DocumentController {
      */
     @PostMapping(value = "/parse-and-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ParseResult> parseAndUploadDocument(@RequestParam("file") MultipartFile file) {
+        StpUtil.checkLogin();
         ParseResult result = documentService.parseAndUploadToFile(file);
 
         if (result.isSuccess()) {
@@ -49,6 +51,7 @@ public class DocumentController {
      */
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ParseResult> parseDocument(@RequestParam("file") MultipartFile file) {
+        StpUtil.checkLogin();
         ParseResult result = documentService.parseFile(file);
 
         if (result.isSuccess()) {
@@ -75,6 +78,7 @@ public class DocumentController {
             @RequestParam(value = "chunkSize", defaultValue = "500") int chunkSize,
             @RequestParam(value = "overlapSize", defaultValue = "50") int overlapSize,
             @RequestParam(value = "strategy", defaultValue = "fixed-size") String strategy) {
+        StpUtil.checkLogin();
 
         ParseResult result = documentService.parseUploadAndChunk(file, strategy, chunkSize, overlapSize);
 
@@ -93,6 +97,7 @@ public class DocumentController {
      */
     @PostMapping(value = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, String>> detectMimeType(@RequestParam("file") MultipartFile file) {
+        StpUtil.checkLogin();
         try {
             String mimeType = documentService.detectMimeType(file);
 
@@ -126,6 +131,7 @@ public class DocumentController {
             @RequestParam(value = "chunkSize", defaultValue = "500") int chunkSize,
             @RequestParam(value = "overlapSize", defaultValue = "50") int overlapSize,
             @RequestParam(value = "strategy", defaultValue = "fixed-size") String strategy) {
+        StpUtil.checkLogin();
 
         ParseResult result = documentService.parseUploadChunkAndEmbed(file, strategy, chunkSize, overlapSize);
 

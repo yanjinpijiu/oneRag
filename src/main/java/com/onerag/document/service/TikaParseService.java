@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.xml.sax.SAXException;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -114,6 +115,40 @@ public class TikaParseService {
 
         } catch (Exception e) {
             log.error("未知错误: {}", originalFilename, e);
+            return ParseResult.failure("解析过程中发生未知错误: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 解析字节数组文档内容。
+     */
+    public ParseResult parseBytes(byte[] fileBytes, String filename) {
+        if (fileBytes == null || fileBytes.length == 0) {
+            return ParseResult.failure("文件为空");
+        }
+        String originalFilename = filename == null || filename.isBlank() ? "未命名文档" : filename;
+        try (InputStream detectStream = new ByteArrayInputStream(fileBytes);
+                InputStream parseStream = new ByteArrayInputStream(fileBytes)) {
+            String mimeType = tika.detect(detectStream, originalFilename);
+            BodyContentHandler handler = new BodyContentHandler(MAX_TEXT_LENGTH);
+            Metadata metadata = new Metadata();
+            metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, originalFilename);
+            ParseContext context = new ParseContext();
+            parser.parse(parseStream, handler, metadata, context);
+
+            String content = cleanText(handler.toString());
+            Map<String, String> metadataMap = extractMetadata(metadata);
+            if (content.isEmpty()) {
+                return ParseResult.failure("解析结果为空，可能是扫描件或加密文档");
+            }
+            return ParseResult.success(mimeType, content, metadataMap);
+        } catch (IOException e) {
+            return ParseResult.failure("读取文件失败: " + e.getMessage());
+        } catch (TikaException e) {
+            return ParseResult.failure("文档解析失败: " + e.getMessage());
+        } catch (SAXException e) {
+            return ParseResult.failure("文档结构解析失败: " + e.getMessage());
+        } catch (Exception e) {
             return ParseResult.failure("解析过程中发生未知错误: " + e.getMessage());
         }
     }

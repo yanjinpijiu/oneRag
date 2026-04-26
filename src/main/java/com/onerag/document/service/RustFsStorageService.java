@@ -3,16 +3,22 @@ package com.onerag.document.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.S3ClientBuilder;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyExistsException;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.InputStream;
-import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
@@ -41,6 +47,11 @@ public class RustFsStorageService {
      */
     public String uploadFile(InputStream inputStream, String filename, String contentType, Map<String, String> metadata,
             long contentLength) {
+        return uploadFileDetailed(inputStream, filename, contentType, metadata, contentLength).getFileUrl();
+    }
+
+    public UploadResult uploadFileDetailed(InputStream inputStream, String filename, String contentType,
+            Map<String, String> metadata, long contentLength) {
         try {
             String bucket = properties.getBucket();
             String objectKey = generateObjectKey(filename);
@@ -75,8 +86,7 @@ public class RustFsStorageService {
 
             String fileUrl = buildFileUrl(bucket, objectKey);
             log.info("文件上传成功：{}", fileUrl);
-
-            return fileUrl;
+            return new UploadResult(bucket, objectKey, fileUrl);
 
         } catch (Exception e) {
             log.error("上传文件到 RustFS 失败", e);
@@ -84,43 +94,51 @@ public class RustFsStorageService {
         }
     }
 
-    // /**
-    // * 上传文件到 RustFS（简化版，不需要元数据）
-    // *
-    // * @param inputStream 文件输入流
-    // * @param filename 文件名
-    // * @param contentType 内容类型
-    // * @return 文件访问 URL
-    // */
-    // public String uploadFile(InputStream inputStream, String filename, String
-    // contentType) {
-    // return uploadFile(inputStream, filename, contentType, null);
-    // }
-    //
-    // /**
-    // * 删除文件
-    // *
-    // * @param fileUrl 文件 URL
-    // */
-    // public void deleteFile(String fileUrl) {
-    // try {
-    // String bucket = properties.getDefaultBucket();
-    // String objectKey = extractObjectKey(fileUrl);
-    //
-    // log.info("删除 RustFS 文件：bucket={}, objectKey={}", bucket, objectKey);
-    //
-    // s3Client.deleteObject(DeleteObjectRequest.builder()
-    // .bucket(bucket)
-    // .key(objectKey)
-    // .build());
-    //
-    // log.info("文件删除成功：{}", fileUrl);
-    //
-    // } catch (Exception e) {
-    // log.error("删除 RustFS 文件失败：{}", fileUrl, e);
-    // throw new RuntimeException("删除文件失败：" + e.getMessage(), e);
-    // }
-    // }
+    public byte[] downloadFile(String bucket, String objectKey) {
+        try {
+            return s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(objectKey)
+                    .build()).asByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("下载文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    public void deleteFile(String bucket, String objectKey) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(objectKey)
+                    .build());
+        } catch (Exception e) {
+            throw new RuntimeException("删除文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    public String generatePresignedDownloadUrl(String bucket, String objectKey, long expiresInSeconds) {
+        software.amazon.awssdk.services.s3.presigner.S3Presigner presigner = software.amazon.awssdk.services.s3.presigner.S3Presigner
+                .builder()
+                .endpointOverride(java.net.URI.create(properties.getUrl()))
+                .credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+                        .create(software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+                                .create(properties.getAccessKeyId(), properties.getSecretAccessKey())))
+                .region(software.amazon.awssdk.regions.Region.of("us-east-1"))
+                .serviceConfiguration(software.amazon.awssdk.services.s3.S3Configuration.builder()
+                        .pathStyleAccessEnabled(true)
+                        .build())
+                .build();
+        try (presigner) {
+            software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest presignRequest = software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
+                    .builder()
+                    .signatureDuration(Duration.ofSeconds(expiresInSeconds))
+                    .getObjectRequest(GetObjectRequest.builder().bucket(bucket).key(objectKey).build())
+                    .build();
+            return presigner.presignGetObject(presignRequest).url().toString();
+        } catch (Exception e) {
+            throw new RuntimeException("生成下载地址失败: " + e.getMessage(), e);
+        }
+    }
 
     /**
      * 检查文件是否存在
@@ -184,24 +202,6 @@ public class RustFsStorageService {
     }
 
     /**
-     * 从 URL 中提取对象键
-     */
-    private String extractObjectKey(String fileUrl) {
-        // 格式：http://host:port/bucket/objectKey
-        String baseUrl = properties.getUrl();
-        if (fileUrl.startsWith(baseUrl)) {
-            String path = fileUrl.substring(baseUrl.length());
-            // 移除开头的 bucket 名称
-            int firstSlash = path.indexOf('/', 1);
-            if (firstSlash > 0) {
-                return path.substring(firstSlash + 1);
-            }
-        }
-        // 如果无法解析，返回整个路径（作为备选方案）
-        return fileUrl;
-    }
-
-    /**
      * 构建文件访问 URL
      */
     private String buildFileUrl(String bucket, String objectKey) {
@@ -209,5 +209,29 @@ public class RustFsStorageService {
                 properties.getUrl(),
                 bucket,
                 objectKey);
+    }
+
+    public static class UploadResult {
+        private final String bucket;
+        private final String objectKey;
+        private final String fileUrl;
+
+        public UploadResult(String bucket, String objectKey, String fileUrl) {
+            this.bucket = bucket;
+            this.objectKey = objectKey;
+            this.fileUrl = fileUrl;
+        }
+
+        public String getBucket() {
+            return bucket;
+        }
+
+        public String getObjectKey() {
+            return objectKey;
+        }
+
+        public String getFileUrl() {
+            return fileUrl;
+        }
     }
 }
