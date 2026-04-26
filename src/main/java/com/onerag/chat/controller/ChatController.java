@@ -2,7 +2,10 @@ package com.onerag.chat.controller;
 
 import com.onerag.chat.DTO.req.ChatReqDTO;
 import com.onerag.chat.DTO.resp.ChatRespDTO;
+import com.onerag.chat.DTO.resp.ConversationMessageRespDTO;
+import com.onerag.chat.DTO.resp.ConversationRespDTO;
 import com.onerag.chat.config.ChatFlowProperties;
+import com.onerag.chat.dao.entity.ConversationDO;
 import com.onerag.chat.orchestrator.ChatOrchestratorService;
 import com.onerag.chat.orchestrator.OrchestrationResult;
 import com.onerag.chat.service.ChatModelService;
@@ -10,12 +13,17 @@ import com.onerag.chat.service.ChatService;
 import com.onerag.chat.service.ConversationService;
 import com.onerag.chat.service.StreamCallback;
 import com.onerag.chat.util.SiliconFlowAssistantText;
+import com.onerag.user.dto.CommonResponse;
+import cn.dev33.satoken.stp.StpUtil;
 import com.onerag.document.dto.RetrievedChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,6 +39,7 @@ import java.util.Map;
 import java.util.StringJoiner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 /**
  * 聊天接口控制器。
@@ -57,9 +66,51 @@ public class ChatController {
      */
     @PostMapping("/send")
     public ResponseEntity<ChatRespDTO> sendAChat(@RequestBody ChatReqDTO chatReqDTO) {
+        StpUtil.checkLogin();
+        String currentUserId = String.valueOf(StpUtil.getLoginId());
+        validateConversationAccess(chatReqDTO.getConversationId(), currentUserId);
         log.info("收到聊天请求：{}，对话ID：{}", chatReqDTO.getMessage(), chatReqDTO.getConversationId());
         ChatRespDTO response = chatService.sendAChat(chatReqDTO.getMessage(), chatReqDTO.getConversationId());
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/conversations")
+    public CommonResponse<List<ConversationRespDTO>> listConversations() {
+        StpUtil.checkLogin();
+        String currentUserId = String.valueOf(StpUtil.getLoginId());
+        List<ConversationRespDTO> conversations = conversationService.getConversations(currentUserId).stream()
+                .map(item -> ConversationRespDTO.builder()
+                        .conversationId(item.getConversationId())
+                        .title(item.getTitle())
+                        .lastTime(item.getLastTime())
+                        .createTime(item.getCreateTime())
+                        .build())
+                .collect(Collectors.toList());
+        return CommonResponse.ok(conversations);
+    }
+
+    @GetMapping("/conversations/{conversationId}/messages")
+    public CommonResponse<List<ConversationMessageRespDTO>> listConversationMessages(@PathVariable String conversationId) {
+        StpUtil.checkLogin();
+        String currentUserId = String.valueOf(StpUtil.getLoginId());
+        conversationService.checkConversationOwner(conversationId, currentUserId);
+        List<ConversationMessageRespDTO> messages = conversationService.getConversationMessages(conversationId).stream()
+                .map(item -> ConversationMessageRespDTO.builder()
+                        .role(item.getRole())
+                        .content(item.getContent())
+                        .createTime(item.getCreateTime())
+                        .build())
+                .collect(Collectors.toList());
+        return CommonResponse.ok(messages);
+    }
+
+    @DeleteMapping("/conversations/{conversationId}")
+    public CommonResponse<Void> deleteConversation(@PathVariable String conversationId) {
+        StpUtil.checkLogin();
+        String currentUserId = String.valueOf(StpUtil.getLoginId());
+        conversationService.checkConversationOwner(conversationId, currentUserId);
+        conversationService.deleteConversation(conversationId);
+        return CommonResponse.ok(null);
     }
 
     /**
@@ -68,6 +119,9 @@ public class ChatController {
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamChat(@RequestBody ChatReqDTO chatReqDTO) {
+        StpUtil.checkLogin();
+        String currentUserId = String.valueOf(StpUtil.getLoginId());
+        validateConversationAccess(chatReqDTO.getConversationId(), currentUserId);
         boolean deepThinking = Boolean.TRUE.equals(chatReqDTO.getDeepThinking());
         log.info("收到流式聊天请求：{}，对话ID：{}，deepThinking={}",
                 chatReqDTO.getMessage(), chatReqDTO.getConversationId(), deepThinking);
@@ -82,7 +136,8 @@ public class ChatController {
                 } catch (Exception e) {
                     log.warn("chat-stream|发送 ack 失败", e);
                 }
-                OrchestrationResult orchestration = chatOrchestratorService.orchestrate(message, chatReqDTO.getConversationId());
+                OrchestrationResult orchestration = chatOrchestratorService.orchestrate(
+                        message, chatReqDTO.getConversationId(), currentUserId);
                 String conversationId = orchestration.getConversationId();
                 long llmStart = System.currentTimeMillis();
                 String referencesPayload = buildReferencesPayload(orchestration.getRetrievedChunks());
@@ -309,7 +364,7 @@ public class ChatController {
                                     "deepThinking", deepThinking
                             ));
                             // #endregion
-                            conversationService.addMessage(conversationId, "default", "assistant", responseContent);
+                            conversationService.addMessage(conversationId, currentUserId, "assistant", responseContent);
                             log.info("chat-stream|requestId={}|conversationId={}|llmCostMs={}|replyLen={}",
                                     orchestration.getRequestId(), conversationId, System.currentTimeMillis() - llmStart, responseContent.length());
 
@@ -448,5 +503,18 @@ public class ChatController {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
+    }
+
+    private void validateConversationAccess(String conversationId, String userId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        ConversationDO conversation = conversationService.getConversation(conversationId);
+        if (conversation == null) {
+            throw new IllegalArgumentException("会话不存在");
+        }
+        if (!conversation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("无权限访问该会话");
+        }
     }
 }

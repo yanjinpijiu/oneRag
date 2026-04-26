@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Onerag 对话</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4d;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --user: #1e3a5f;
+      --assistant: #243040;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    header .meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-width: 420px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    main {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem;
+      max-width: 840px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .msg {
+      max-width: 92%;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user);
+      border: 1px solid var(--border);
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--assistant);
+      border: 1px solid var(--border);
+    }
+    .answer-loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.1rem;
+      color: var(--muted);
+      font-size: 0.84rem;
+      min-height: 1.35rem;
+      margin-bottom: 0.2rem;
+    }
+    .answer-loading .dots {
+      display: inline-flex;
+      align-items: flex-end;
+      margin-left: 0.1rem;
+    }
+    .answer-loading .dot {
+      display: inline-block;
+      width: 0.38em;
+      text-align: center;
+      animation: dot-jump 1s infinite ease-in-out;
+    }
+    .answer-loading .dot:nth-child(2) { animation-delay: 0.15s; }
+    .answer-loading .dot:nth-child(3) { animation-delay: 0.3s; }
+    .answer-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @keyframes dot-jump {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+      40% { transform: translateY(-3px); opacity: 1; }
+    }
+    .msg.system {
+      align-self: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: transparent;
+      border: 1px dashed var(--border);
+    }
+    .assistant-block {
+      align-self: flex-start;
+      max-width: 92%;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    details.thinking {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #17212e;
+      padding: 0.4rem 0.6rem;
+      display: none;
+    }
+    details.thinking summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.78rem;
+      user-select: none;
+    }
+    .thinking-body {
+      margin-top: 0.45rem;
+      width: 100%;
+      height: 140px;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #101926;
+      padding: 0.45rem 0.6rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.78rem;
+      color: #c4d3e6;
+      line-height: 1.45;
+    }
+    details.refs {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #132030;
+      padding: 0.4rem 0.6rem;
+      display: none;
+    }
+    details.refs summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.78rem;
+      user-select: none;
+    }
+    .refs-body {
+      margin-top: 0.45rem;
+      width: 100%;
+      max-height: 220px;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0f1b29;
+      padding: 0.45rem 0.6rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.78rem;
+      color: #c4d3e6;
+      line-height: 1.45;
+    }
+    details.pipeline {
+      margin-bottom: 0.75rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      background: var(--surface);
+    }
+    details.pipeline summary { cursor: pointer; user-select: none; }
+    details.pipeline pre {
+      margin: 0.5rem 0 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 0.75rem;
+    }
+    footer {
+      padding: 0.75rem 1rem 1rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      max-width: 840px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-end;
+    }
+    textarea {
+      flex: 1;
+      min-height: 52px;
+      max-height: 160px;
+      resize: vertical;
+      padding: 0.65rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    label.toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Onerag 对话</h1>
+      <div class="meta" id="statusLine">就绪 · 访问 <code>/chat.html</code> 或与后端同源打开</div>
+    </div>
+    <div class="toolbar">
+      <label class="toggle"><input type="checkbox" id="useStream" checked /> 流式 SSE</label>
+      <label class="toggle"><input type="checkbox" id="deepThinking" /> 深度思考</label>
+      <button type="button" class="secondary" id="btnNew">新对话</button>
+    </div>
+  </header>
+  <main>
+    <details class="pipeline" id="pipelineBox" open>
+      <summary>RAG 管线（改写 / 意图 / 元信息）</summary>
+      <pre id="pipelineLog">发送第一条消息后显示…</pre>
+    </details>
+    <div class="messages" id="messages"></div>
+  </main>
+  <footer>
+    <div class="input-row">
+      <textarea id="input" placeholder="输入消息，Enter 发送（Shift+Enter 换行）" rows="2"></textarea>
+      <button type="button" id="btnSend">发送</button>
+    </div>
+  </footer>
+
+  <script>
+    const API_BASE = ''; /* 同源 */
+    const STORAGE_KEY = 'onerag_conversation_id';
+
+    let conversationId = sessionStorage.getItem(STORAGE_KEY) || '';
+
+    const el = (id) => document.getElementById(id);
+    const messages = el('messages');
+    const input = el('input');
+    const btnSend = el('btnSend');
+    const btnNew = el('btnNew');
+    const useStream = el('useStream');
+    const deepThinking = el('deepThinking');
+    const pipelineLog = el('pipelineLog');
+    const statusLine = el('statusLine');
+
+    function setStatus(text) {
+      statusLine.textContent = text;
+    }
+
+    function appendMessage(role, text, className) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (className || role);
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+      return div;
+    }
+
+    function appendSystem(text) {
+      return appendMessage('system', text, 'system');
+    }
+
+    function createAssistantBlock() {
+      const wrap = document.createElement('div');
+      wrap.className = 'assistant-block';
+
+      const thinking = document.createElement('details');
+      thinking.className = 'thinking';
+      thinking.open = false;
+
+      const summary = document.createElement('summary');
+      summary.textContent = '思考过程（可展开）';
+      const body = document.createElement('div');
+      body.className = 'thinking-body';
+      body.textContent = '';
+      thinking.appendChild(summary);
+      thinking.appendChild(body);
+
+      const answer = document.createElement('div');
+      answer.className = 'msg assistant';
+
+      const answerLoading = document.createElement('div');
+      answerLoading.className = 'answer-loading';
+      const answerLoadingText = document.createElement('span');
+      answerLoadingText.textContent = '正在思考';
+      const answerLoadingDots = document.createElement('span');
+      answerLoadingDots.className = 'dots';
+      for (let i = 0; i < 3; i += 1) {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.textContent = '.';
+        answerLoadingDots.appendChild(dot);
+      }
+      answerLoading.appendChild(answerLoadingText);
+      answerLoading.appendChild(answerLoadingDots);
+
+      const answerText = document.createElement('div');
+      answerText.className = 'answer-text';
+      answerText.textContent = '';
+
+      answer.appendChild(answerLoading);
+      answer.appendChild(answerText);
+
+      const refs = document.createElement('details');
+      refs.className = 'refs';
+      refs.open = false;
+      const refsSummary = document.createElement('summary');
+      refsSummary.textContent = '参考资料（可展开）';
+      const refsBody = document.createElement('div');
+      refsBody.className = 'refs-body';
+      refsBody.textContent = '';
+      refs.appendChild(refsSummary);
+      refs.appendChild(refsBody);
+
+      wrap.appendChild(thinking);
+      wrap.appendChild(answer);
+      wrap.appendChild(refs);
+      messages.appendChild(wrap);
+      messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+      return {
+        answerEl: answer,
+        answerTextEl: answerText,
+        answerLoadingEl: answerLoading,
+        thinkingEl: thinking,
+        thinkingBodyEl: body,
+        refsEl: refs,
+        refsBodyEl: refsBody,
+      };
+    }
+
+    btnNew.addEventListener('click', () => {
+      conversationId = '';
+      sessionStorage.removeItem(STORAGE_KEY);
+      messages.innerHTML = '';
+      pipelineLog.textContent = '已开启新对话。';
+      setStatus('新对话 · 无 session');
+    });
+
+    async function sendNonStream(text) {
+      setStatus('发送中（非流式）…');
+      btnSend.disabled = true;
+      const res = await fetch(API_BASE + '/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          conversationId: conversationId || null,
+          deepThinking: !!deepThinking.checked,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (data.conversationId) {
+        conversationId = data.conversationId;
+        sessionStorage.setItem(STORAGE_KEY, conversationId);
+      }
+      appendMessage('assistant', data.message || '', 'assistant');
+      setStatus('完成 · conversationId=' + (conversationId || '—'));
+      btnSend.disabled = false;
+    }
+
+    function parseSseBlocks(buffer) {
+      const events = [];
+      let sep = buffer.indexOf('\n\n');
+      while (sep !== -1) {
+        const raw = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        let eventName = 'message';
+        const dataLines = [];
+        for (const line of raw.split(/\r?\n/)) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+        }
+        events.push({ event: eventName, data: dataLines.join('\n') });
+        sep = buffer.indexOf('\n\n');
+      }
+      return { events, rest: buffer };
+    }
+
+    async function sendStream(text) {
+      setStatus('连接流式接口…');
+      btnSend.disabled = true;
+      appendMessage('user', text, 'user');
+
+      const assistantUi = createAssistantBlock();
+      let buf = '';
+      let pipelineLines = [];
+      let activeModel = '';
+      let answerStarted = false;
+
+      const res = await fetch(API_BASE + '/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({
+          message: text,
+          conversationId: conversationId || null,
+          deepThinking: !!deepThinking.checked,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        btnSend.disabled = false;
+        assistantUi.answerLoadingEl.style.display = 'none';
+        assistantUi.answerTextEl.textContent = '错误: ' + errText;
+        setStatus('HTTP ' + res.status);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const { events, rest } = parseSseBlocks(buf);
+          buf = rest;
+          for (const { event, data } of events) {
+            if (event === 'meta') {
+              try {
+                const j = JSON.parse(data);
+                if (j.conversationId) {
+                  conversationId = j.conversationId;
+                  sessionStorage.setItem(STORAGE_KEY, conversationId);
+                }
+                if (j.model) {
+                  activeModel = j.model;
+                }
+                pipelineLines.push('meta: ' + JSON.stringify(j, null, 2));
+              } catch {
+                pipelineLines.push('meta: ' + data);
+              }
+            } else if (event === 'queryRewrite') {
+              pipelineLines.push('改写: ' + data);
+            } else if (event === 'intent') {
+              pipelineLines.push('意图: ' + data);
+            } else if (event === 'references') {
+              try {
+                const payload = JSON.parse(data);
+                const items = Array.isArray(payload.items) ? payload.items : [];
+                if (items.length > 0) {
+                  assistantUi.refsEl.style.display = 'block';
+                  assistantUi.refsBodyEl.textContent = items
+                    .map((it) => `[${it.index}] ${it.title} (docId=${it.docId}, score=${Number(it.score).toFixed(3)})\n${it.content}`)
+                    .join('\n\n');
+                }
+              } catch {
+                // ignore malformed references payload
+              }
+            } else if (event === 'first-token') {
+              pipelineLines.push('首包: ' + data);
+              setStatus('生成中… ' + data + (activeModel ? ' · 模型=' + activeModel : ''));
+            } else if (event === 'reasoning') {
+              assistantUi.thinkingEl.style.display = 'block';
+              assistantUi.thinkingBodyEl.textContent += data;
+              messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+            } else if (event === 'reasoning-reset') {
+              assistantUi.thinkingEl.style.display = 'block';
+              assistantUi.thinkingBodyEl.textContent = data || '';
+              messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+            } else if (event === 'content') {
+              if (data) {
+                if (!answerStarted) {
+                  answerStarted = true;
+                  assistantUi.answerLoadingEl.style.display = 'none';
+                }
+                assistantUi.answerTextEl.textContent += data;
+              }
+              messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+            } else if (event === 'done') {
+              if (!answerStarted) {
+                assistantUi.answerLoadingEl.style.display = 'none';
+              }
+              setStatus('完成 · conversationId=' + (conversationId || '—') + (activeModel ? ' · 模型=' + activeModel : ''));
+            } else if (event === 'error') {
+              assistantUi.answerLoadingEl.style.display = 'none';
+              appendSystem('SSE error: ' + data);
+            }
+          }
+          pipelineLog.textContent = pipelineLines.join('\n\n');
+        }
+      } finally {
+        reader.releaseLock();
+        btnSend.disabled = false;
+      }
+    }
+
+    async function onSend() {
+      const text = (input.value || '').trim();
+      if (!text) return;
+      input.value = '';
+      if (!useStream.checked) {
+        appendMessage('user', text, 'user');
+        try {
+          await sendNonStream(text);
+        } catch (e) {
+          appendSystem(String(e.message || e));
+          btnSend.disabled = false;
+        }
+        return;
+      }
+      try {
+        await sendStream(text);
+      } catch (e) {
+        appendSystem(String(e.message || e));
+        btnSend.disabled = false;
+        setStatus('失败');
+      }
+    }
+
+    btnSend.addEventListener('click', onSend);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        onSend();
+      }
+    });
+
+    setStatus(
+      conversationId
+        ? '继续会话 · conversationId=' + conversationId
+        : '新会话 · 发送后开始'
+    );
+  </script>
+</body>
+</html>

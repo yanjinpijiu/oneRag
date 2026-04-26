@@ -6,6 +6,7 @@ import com.onerag.chat.orchestrator.OrchestrationResult;
 import com.onerag.chat.service.ChatModelService;
 import com.onerag.chat.service.ChatService;
 import com.onerag.chat.service.ConversationService;
+import cn.dev33.satoken.stp.StpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,12 +31,13 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public ChatRespDTO sendAChat(String message, String conversationId) {
         try {
-            OrchestrationResult result = chatOrchestratorService.orchestrate(message, conversationId);
+            String currentUserId = resolveCurrentUserId();
+            OrchestrationResult result = chatOrchestratorService.orchestrate(message, conversationId, currentUserId);
             long llmStart = System.currentTimeMillis();
             ChatRespDTO response = chatModelService.chat(message, result.getFullContext());
 
             // 添加助手回复到对话
-            conversationService.addMessage(result.getConversationId(), "default", "assistant", response.getMessage());
+            conversationService.addMessage(result.getConversationId(), currentUserId, "assistant", response.getMessage());
 
             // 更新对话标题（如果是第一条消息）
             if (conversationService.getConversationMessages(result.getConversationId()).size() == 2) {
@@ -62,5 +64,14 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public ChatRespDTO sendAChat(String message) {
         return sendAChat(message, null);
+    }
+
+    private String resolveCurrentUserId() {
+        try {
+            StpUtil.checkLogin();
+            return String.valueOf(StpUtil.getLoginId());
+        } catch (Exception e) {
+            return "default";
+        }
     }
 }
